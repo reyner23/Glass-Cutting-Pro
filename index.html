@@ -2506,15 +2506,42 @@ function renderSPK(){
       // Potong-specific layout info panel
       const layoutPanel=isPotong?(
         cutJob
-          ?'<div style="background:var(--bg1);border:1px solid '+(cutJob.status==='executed'?'var(--green-d)':'var(--teal-d)')+';border-radius:5px;padding:8px 10px;margin-bottom:8px">'
-            +'<div style="font-family:var(--mono);font-size:9px;color:var(--tx3);margin-bottom:4px">CUTTING LAYOUT</div>'
-            +'<div style="display:flex;justify-content:space-between;align-items:center">'
-            +'<div><div style="font-size:11px;color:var(--teal)">'+cutJob.stockName+' '+cutJob.sheetW+'×'+cutJob.sheetH+'mm</div>'
-            +'<div style="font-family:var(--mono);font-size:9px;color:var(--tx3)">'+cutJob.pieces.length+' pieces · '+(cutJob.status==='executed'?'<span style=\"color:var(--green)\">✓ Sudah Dikerjakan</span>':'<span style=\"color:var(--gold)\">Menunggu Eksekusi</span>')+'</div>'
-            +'</div>'
-            +'<button class="btn btn-ghost btn-sm" onclick="openSPKCutExec(\''+spk.id+'\')" style="font-size:10px">'
-            +(cutJob.status==='executed'?'👁 Lihat Layout':'✂️ Eksekusi Potong')
-            +'</button></div></div>'
+          ?(function() {
+              const borderColor = cutJob.status === 'executed' ? 'var(--green-d)' : 'var(--teal-d)';
+              let html = '<div style="background:var(--bg1);border:1px solid ' + borderColor + ';border-radius:5px;padding:8px 10px;margin-bottom:8px">';
+              html += '<div style="font-family:var(--mono);font-size:9px;color:var(--tx3);margin-bottom:6px">CUTTING LAYOUT</div>';
+
+              if (cutJob.skuLayouts && Object.keys(cutJob.skuLayouts).length) {
+                // New multi-SKU format
+                Object.values(cutJob.skuLayouts).forEach(function(sku) {
+                  const skuLabel = (sku.skuName || sku.skuCode || '') + ' ' + (sku.thick || '') + ' ' + (sku.type || '');
+                  (sku.sheets || []).forEach(function(sh, si) {
+                    const shLabel = sku.sheets.length > 1 ? ' (Sheet #' + (si + 1) + ')' : '';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+                    html += '<div>';
+                    html += '<div style="font-size:11px;color:var(--teal)">' + skuLabel + shLabel + ' — ' + sh.sheetW + '×' + sh.sheetH + 'mm</div>';
+                    html += '<div style="font-family:var(--mono);font-size:9px;color:var(--tx3)">' + sh.pieces.length + ' pieces · utilisasi ' + sh.utilPct + '%</div>';
+                    html += '</div></div>';
+                  });
+                });
+              } else {
+                // Legacy flat format fallback
+                html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+                html += '<div><div style="font-size:11px;color:var(--teal)">' + (cutJob.stockName || '') + ' ' + (cutJob.sheetW || '') + '×' + (cutJob.sheetH || '') + 'mm</div>';
+                html += '<div style="font-family:var(--mono);font-size:9px;color:var(--tx3)">' + ((cutJob.pieces || []).length) + ' pieces</div></div></div>';
+              }
+
+              const statusLabel = cutJob.status === 'executed'
+                ? '<span style="color:var(--green)">✓ Sudah Dikerjakan</span>'
+                : '<span style="color:var(--gold)">Menunggu Eksekusi</span>';
+              html += '<div style="font-family:var(--mono);font-size:9px;color:var(--tx3);margin-top:4px">' + statusLabel + '</div>';
+              html += '<div style="margin-top:6px">';
+              html += '<button class="btn btn-ghost btn-sm" onclick="openSPKCutExec(\'' + spk.id + '\')" style="font-size:10px">';
+              html += (cutJob.status === 'executed' ? '👁 Lihat Layout' : '✂️ Eksekusi Potong');
+              html += '</button></div>';
+              html += '</div>';
+              return html;
+            })()
           :'<div style="background:rgba(248,113,113,0.08);border:1px solid var(--red-d);border-radius:5px;padding:8px 10px;margin-bottom:8px;font-family:var(--mono);font-size:10px;color:var(--red)">⚠️ Belum ada cutting layout. Buat di menu ✂️ Cutting Layout dulu.</div>'
       ):'';
       return`<div class="spk-card ${div.color}" style="border-left-color:${color}">
@@ -4014,165 +4041,199 @@ function printCutLayout(){
 }
 
 // Save layout → open confirmation modal (no browser confirm() dialog)
-function openConfirmCut(){
-  if(!window._skuLayouts||!Object.keys(window._skuLayouts).length){toast('Generate layout dulu — klik ⚡ Generate Layout','warn');return}
-  const ordId=window._cutOrdId||document.getElementById('cut-ord').value;
-  const o=D.orders.find(x=>x.id===ordId);
-  if(!o){toast('Pilih order terlebih dahulu','err');return}
+function openConfirmCut() {
+  const ordId = window._cutOrdId;
+  if (!ordId) { toast('Pilih order terlebih dahulu', 'err'); return; }
+  const o = D.orders.find(x => x.id === ordId);
+  if (!o) return;
+  const layouts = window._skuLayouts || {};
+  const skuKeys = Object.keys(layouts);
+  if (!skuKeys.length) { toast('Generate layout terlebih dahulu', 'err'); return; }
 
-  // Aggregate summary across all SKUs and sheets
-  let totalSheets=0,totalPieces=0,totalRemnants=0;
-  const skuSummaries=[];
-  Object.keys(window._skuLayouts).forEach(key=>{
-    const entry=window._skuLayouts[key];
-    const g=entry.group;
-    entry.sheets.forEach((se,i)=>{
-      totalSheets++;
-      totalPieces+=se.layoutResult.packed.length;
-      totalRemnants+=(se.remnants||[]).length;
-      const usedArea=se.layoutResult.packed.reduce((a,p)=>a+p.w*p.h,0);
-      const util=se.sheetObj.w&&se.sheetObj.h?((usedArea/(se.sheetObj.w*se.sheetObj.h))*100).toFixed(1):'0';
-      skuSummaries.push('<div style="background:var(--bg1);border:1px solid var(--line);border-radius:5px;padding:8px 10px">'
-        +'<div style="font-family:var(--disp);font-weight:700;font-size:11px;color:var(--gold);margin-bottom:4px">'+(g.skuName||g.skuCode)+(g.thick?' · '+g.thick:'')+(g.type?' '+g.type:'')+(g.color?' '+g.color:'')+(entry.sheets.length>1?' — Sheet #'+(i+1):'')+'</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">'
-        +'<div><div class="sc-lbl">Sheet</div><div class="tm" style="color:var(--teal)">'+se.sheetObj.skuName+' '+se.sheetObj.w+'×'+se.sheetObj.h+'mm</div></div>'
-        +'<div><div class="sc-lbl">Pieces</div><div class="tm">'+se.layoutResult.packed.length+' potong</div></div>'
-        +'<div><div class="sc-lbl">Utilisasi</div><div class="tm">'+util+'%</div></div>'
-        +'</div></div>');
-    });
+  // Summary info
+  let totalSheets = 0, totalPieces = 0;
+  skuKeys.forEach(k => {
+    const e = layouts[k];
+    totalSheets += (e.sheets || []).length;
+    (e.sheets || []).forEach(s => { totalPieces += (s.layoutResult ? s.layoutResult.packed.length : 0); });
   });
 
-  document.getElementById('cut-confirm-info').innerHTML=
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">'
-    +'<div><div class="sc-lbl">Order</div><div class="tm">'+o.noOrder+'</div></div>'
-    +'<div><div class="sc-lbl">Customer</div><div>'+o.customerName+'</div></div>'
-    +'<div><div class="sc-lbl">Total Sheets</div><div class="tm">'+totalSheets+'</div></div>'
-    +'<div><div class="sc-lbl">Total Pieces</div><div class="tm">'+totalPieces+' potong</div></div>'
-    +'</div>'
-    +'<div style="display:flex;flex-direction:column;gap:6px">'+skuSummaries.join('')+'</div>';
-
-  // Collect all remnants from all sheets across all SKUs
-  const allRems=[];
-  Object.keys(window._skuLayouts).forEach(key=>{
-    const entry=window._skuLayouts[key];
-    entry.sheets.forEach((se,si)=>{
-      (se.remnants||[]).forEach((rem,ri)=>{
-        allRems.push({rem,skuKey:key,sheetIdx:si,remIdx:ri});
-      });
-    });
-  });
-  const remEl=document.getElementById('cut-confirm-remnants');
-  if(!allRems.length){
-    remEl.innerHTML='<div style="font-family:var(--mono);font-size:10px;color:var(--tx3)">Tidak ada sisa potongan signifikan.</div>';
-  } else {
-    remEl.innerHTML=allRems.map(function(item,i){
-      const rem=item.rem;
-      return '<div style="display:grid;grid-template-columns:1fr 80px auto;gap:8px;align-items:center;background:var(--bg1);border:1px solid var(--green-d);border-radius:5px;padding:7px 10px">'
-        +'<div><div style="font-family:var(--mono);font-size:11px;color:var(--green)">'+rem.w+' × '+rem.h+' mm <span style="color:var(--tx3);font-size:9px">('+rem.label+')</span></div></div>'
-        +'<input type="number" class="rem-qty" data-idx="'+i+'" value="1" min="1" style="width:60px;font-size:11px;padding:4px 6px">'
-        +'<select class="rem-action" data-idx="'+i+'" style="font-size:11px;padding:4px 6px">'
-        +'<option value="return">♻️ Kembalikan ke Inventory</option>'
-        +'<option value="waste">🗑️ Buang (Waste)</option>'
-        +'</select>'
-        +'</div>';
-    }).join('');
+  const infoEl = document.getElementById('cut-confirm-info');
+  if (infoEl) {
+    infoEl.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">' +
+      '<div><div class="sc-lbl">Order</div><div class="tm">' + o.noOrder + '</div></div>' +
+      '<div><div class="sc-lbl">Customer</div><div style="font-size:11px">' + (o.customerName || '—') + '</div></div>' +
+      '<div><div class="sc-lbl">Total SKU</div><div class="tm">' + skuKeys.length + ' SKU · ' + totalSheets + ' sheet · ' + totalPieces + ' pieces</div></div>' +
+      '</div>';
   }
-  // Store allRems for doConfirmCut
-  window._confirmRems=allRems;
+
+  // Remnants section — grouped by SKU then by sheet
+  const remnantEl = document.getElementById('cut-confirm-remnants');
+  if (!remnantEl) { openMo('mo-cut-confirm'); return; }
+
+  const threshold = D.settings.threshold || 100;
+  let remnantHtml = '';
+  let hasAnyRemnant = false;
+
+  skuKeys.forEach(function(skuKey) {
+    const entry = layouts[skuKey];
+    const group = entry.group || {};
+    const sheets = entry.sheets || [];
+    const skuLabel = (group.skuName || group.skuCode || skuKey) + ' — ' + (group.thick || '') + ' ' + (group.type || '') + (group.color ? ' / ' + group.color : '');
+
+    sheets.forEach(function(sheetEntry, si) {
+      const sh = sheetEntry.sheetObj || {};
+      const result = sheetEntry.layoutResult || { packed: [], unpacked: [] };
+      const W = sh.w || 0, H = sh.h || 0;
+
+      // Compute remnants for this sheet
+      const remnants = sheetEntry.remnants || [];
+      const sigRemnants = remnants.filter(function(r) { return r.w >= threshold && r.h >= threshold; });
+
+      if (!sigRemnants.length) return;
+      hasAnyRemnant = true;
+
+      const sheetLabel = sheets.length > 1 ? ' — Sheet #' + (si + 1) : '';
+      remnantHtml += '<div style="margin-bottom:12px">';
+      remnantHtml += '<div style="font-family:var(--mono);font-size:9px;color:var(--teal);letter-spacing:1px;margin-bottom:6px;padding:4px 8px;background:var(--bg1);border-radius:4px;border-left:2px solid var(--teal)">';
+      remnantHtml += '✂️ ' + skuLabel + sheetLabel + ' · Sheet ' + W + '×' + H + 'mm</div>';
+
+      sigRemnants.forEach(function(r, ri) {
+        const uid_r = 'remn_' + skuKey.replace(/[^a-z0-9]/gi, '_') + '_s' + si + '_r' + ri;
+        remnantHtml += '<div class="cut-sku-remnant-row" style="margin-bottom:5px">';
+        remnantHtml += '<div style="flex:1"><span style="color:var(--gold);font-weight:700">' + r.w + '×' + r.h + 'mm</span>';
+        remnantHtml += '<span style="color:var(--tx3);margin-left:8px">' + ((r.w * r.h / 1000000).toFixed(3)) + ' m²</span></div>';
+        remnantHtml += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--green)">';
+        remnantHtml += '<input type="radio" name="' + uid_r + '" value="return" checked> Kembalikan ke Inventory</label>';
+        remnantHtml += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--red)">';
+        remnantHtml += '<input type="radio" name="' + uid_r + '" value="waste"> Buang (Waste)</label>';
+        remnantHtml += '<input type="hidden" class="remn-meta" data-sku-key="' + skuKey + '" data-sheet-idx="' + si + '" data-remn-idx="' + ri + '" data-remn-w="' + r.w + '" data-remn-h="' + r.h + '" data-radio-name="' + uid_r + '">';
+        remnantHtml += '</div>';
+      });
+
+      remnantHtml += '</div>';
+    });
+  });
+
+  remnantEl.innerHTML = hasAnyRemnant
+    ? remnantHtml
+    : '<div style="font-family:var(--mono);font-size:10px;color:var(--tx3)">Tidak ada sisa potongan signifikan (≥' + threshold + 'mm).</div>';
+
   openMo('mo-cut-confirm');
 }
 
-function doConfirmCut(){
-  const ordId=window._cutOrdId||document.getElementById('cut-ord').value;
-  const o=D.orders.find(x=>x.id===ordId);
-  if(!o){toast('Data tidak valid','err');return}
-  // Collect remnant decisions from modal
-  const allRems=window._confirmRems||[];
-  const remnantDecisions=allRems.map(function(item,i){
-    var actionEl=document.querySelector('.rem-action[data-idx="'+i+'"]');
-    var qtyEl=document.querySelector('.rem-qty[data-idx="'+i+'"]');
-    return Object.assign({},item.rem,{
-      skuKey:item.skuKey,sheetIdx:item.sheetIdx,remIdx:item.remIdx,
-      action:actionEl?actionEl.value:'waste',
-      qty:Math.max(1,+(qtyEl?qtyEl.value:1)||1)
-    });
-  });
+function doConfirmCut() {
+  const job = saveCuttingJob();
+  if (!job) { toast('Gagal menyimpan cutting job', 'err'); return; }
+
   closeMo('mo-cut-confirm');
-  saveCuttingJob(o, remnantDecisions);
+  renderSPK();
+  renderAll();
+  updateBadges();
+  populateCutSelectors();
+  toast('✅ Cutting layout tersimpan & SPK Potong telah diperbarui', 'ok');
 }
 
-function saveCuttingJob(o, remnantDecisions){
-  const jobId=uid();
-  const kerf=D.settings.kerf||3;
+function saveCuttingJob() {
+  const ordId = window._cutOrdId;
+  if (!ordId) return;
+  const o = D.orders.find(x => x.id === ordId);
+  if (!o) return;
+  const layouts = window._skuLayouts || {};
+  const kerf = D.settings.kerf || 3;
 
-  // Build skuLayouts object for saving
-  const skuLayouts={};
-  Object.keys(window._skuLayouts).forEach(key=>{
-    const entry=window._skuLayouts[key];
-    const g=entry.group;
-    skuLayouts[key]={
-      skuCode:g.skuCode,skuName:g.skuName,thick:g.thick,type:g.type,color:g.color,
-      sheets:entry.sheets.map(function(se){
-        const sh=se.sheetObj;
-        const usedArea=se.layoutResult.packed.reduce(function(a,p){return a+p.w*p.h},0);
-        const utilPct=sh.w&&sh.h?((usedArea/(sh.w*sh.h))*100).toFixed(1):'0';
-        return{
-          sheetId:se.sheetId,stockName:sh.skuName,sheetW:sh.w,sheetH:sh.h,
-          sheetThick:sh.thick,sheetType:sh.type,sheetColor:sh.color,
-          pieces:se.layoutResult.packed,
-          layoutResult:{packed:se.layoutResult.packed,unpacked:se.layoutResult.unpacked,maxR:se.layoutResult.maxR,maxB:se.layoutResult.maxB,W:se.layoutResult.W,H:se.layoutResult.H},
-          remnants:se.remnants||[],
-          kerf:se.kerf||kerf,
-          utilPct
+  // Collect remnant decisions from modal
+  const threshold = D.settings.threshold || 100;
+  const remnantDecisions = {};
+  document.querySelectorAll('.remn-meta').forEach(function(inp) {
+    const key = inp.dataset.skuKey;
+    const si = +inp.dataset.sheetIdx;
+    const ri = +inp.dataset.remnIdx;
+    const radioName = inp.dataset.radioName;
+    const checked = document.querySelector('input[name="' + radioName + '"]:checked');
+    const decision = checked ? checked.value : 'return';
+    if (!remnantDecisions[key]) remnantDecisions[key] = {};
+    if (!remnantDecisions[key][si]) remnantDecisions[key][si] = {};
+    remnantDecisions[key][si][ri] = decision;
+  });
+
+  // Build serializable skuLayouts (no DOM nodes, no canvas)
+  const savedSkuLayouts = {};
+  Object.keys(layouts).forEach(function(skuKey) {
+    const entry = layouts[skuKey];
+    const group = entry.group || {};
+    savedSkuLayouts[skuKey] = {
+      skuKey: skuKey,
+      skuId: group.skuId || '',
+      skuCode: group.skuCode || '',
+      skuName: group.skuName || '',
+      thick: group.thick || '',
+      type: group.type || '',
+      color: group.color || '',
+      sheets: (entry.sheets || []).map(function(se, si) {
+        const sh = se.sheetObj || {};
+        const result = se.layoutResult || { packed: [], unpacked: [] };
+        const utilPct = (sh.w && sh.h)
+          ? +((result.packed.reduce(function(a,p){return a+p.w*p.h;},0) / (sh.w * sh.h)) * 100).toFixed(1)
+          : 0;
+        const sigRemnants = (se.remnants || [])
+          .filter(function(r) { return r.w >= threshold && r.h >= threshold; })
+          .map(function(r, ri) {
+            const dec = (remnantDecisions[skuKey] && remnantDecisions[skuKey][si] && remnantDecisions[skuKey][si][ri]) || 'return';
+            return { w: r.w, h: r.h, decision: dec };
+          });
+        return {
+          sheetId: se.sheetId || sh.id || '',
+          stockName: sh.skuName || sh.name || '',
+          sheetW: sh.w || 0,
+          sheetH: sh.h || 0,
+          thick: sh.thick || group.thick || '',
+          type: sh.type || group.type || '',
+          color: sh.color || group.color || '',
+          utilPct: utilPct,
+          pieces: result.packed.map(function(p) { return { w: p.w, h: p.h, x: p.x || 0, y: p.y || 0, label: p.label || '' }; }),
+          remnants: sigRemnants
         };
       })
     };
   });
 
-  // Attach remnant decisions to their respective sheets
-  remnantDecisions.forEach(function(rd){
-    if(skuLayouts[rd.skuKey]&&skuLayouts[rd.skuKey].sheets[rd.sheetIdx]){
-      const sheetData=skuLayouts[rd.skuKey].sheets[rd.sheetIdx];
-      if(!sheetData.remnantDecisions)sheetData.remnantDecisions=[];
-      sheetData.remnantDecisions.push(rd);
-    }
+  // Total piece count for summary
+  let totalPieces = 0;
+  Object.values(savedSkuLayouts).forEach(function(sku) {
+    sku.sheets.forEach(function(sh) { totalPieces += sh.pieces.length; });
   });
 
-  // Extract first sheet data for legacy backward-compat fields
-  const _firstSheet=Object.values(skuLayouts)[0]?.sheets[0];
-  const cj={
-    id:jobId,
-    orderId:o.id,noOrder:o.noOrder,customerName:o.customerName,
-    skuLayouts,
-    // Legacy fields for backward compat with old SPK exec code (first sheet of first SKU)
-    stockId:_firstSheet?.sheetId||null,
-    stockName:_firstSheet?.stockName||null,
-    sheetW:_firstSheet?.sheetW||null,
-    sheetH:_firstSheet?.sheetH||null,
-    sheetThick:_firstSheet?.sheetThick||null,
-    sheetType:_firstSheet?.sheetType||null,
-    sheetColor:_firstSheet?.sheetColor||null,
-    kerf,
-    status:'pending',
-    created:new Date().toISOString()
+  // Remove any existing pending cutting job for this order
+  D.cuttingJobs = (D.cuttingJobs || []).filter(function(cj) {
+    return !(cj.orderId === ordId && cj.status === 'pending');
+  });
+
+  const newJob = {
+    id: uid(),
+    orderId: ordId,
+    noOrder: o.noOrder,
+    customerName: o.customerName,
+    skuLayouts: savedSkuLayouts,
+    // Legacy flat fields for backward compat with old SPK panel code that reads cutJob.pieces / cutJob.stockName
+    pieces: Object.values(savedSkuLayouts).flatMap(function(sku) {
+      return sku.sheets.flatMap(function(sh) { return sh.pieces; });
+    }),
+    stockName: Object.values(savedSkuLayouts).map(function(sku) {
+      return sku.skuName + ' ' + sku.thick + ' ' + sku.type;
+    }).join(', '),
+    sheetW: Object.values(savedSkuLayouts)[0]?.sheets[0]?.sheetW || 0,
+    sheetH: Object.values(savedSkuLayouts)[0]?.sheets[0]?.sheetH || 0,
+    totalPieces: totalPieces,
+    status: 'pending',
+    created: new Date().toISOString()
   };
-  // Remove any previous pending job for same order
-  D.cuttingJobs=D.cuttingJobs.filter(function(x){return !(x.orderId===o.id&&x.status==='pending');});
-  D.cuttingJobs.push(cj);
+
+  if (!D.cuttingJobs) D.cuttingJobs = [];
+  D.cuttingJobs.push(newJob);
   saveAll();
-  // Reset state
-  window._layoutResult=null;window._layoutRemnants=null;window._cutSheetId=null;window._cutOrdId=null;
-  window._skuLayouts={};window._confirmRems=[];
-  document.getElementById('btnCC').disabled=true;
-  document.getElementById('cut-diagrams-container').innerHTML='';
-  document.getElementById('cut-list').innerHTML='';
-  document.getElementById('cut-info').style.display='none';
-  document.getElementById('cut-sheet').value='';
-  document.getElementById('cut-ord').value='';
-  addCutPiece();
-  populateCutSelectors();
-  renderSPK();updateBadges();
-  toast('✅ Layout tersimpan untuk '+o.noOrder+' — operator potong bisa mulai di SPK Divisi Potong','ok');
+  return newJob;
 }
 
 function viewCutJob(ordId){
@@ -4187,216 +4248,260 @@ function viewCutJob(ordId){
 }
 
 // ─── SPK Potong: open cutting execution modal ────────
-function openSPKCutExec(spkId){
-  const spk=D.spk.find(x=>x.id===spkId);if(!spk)return;
-  // Find job: pending = not yet executed, executed = already done (view only)
-  const cj=(D.cuttingJobs||[]).find(x=>x.orderId===spk.orderId&&(x.status==='pending'||x.status==='executed'));
-  if(!cj){toast('Cutting layout belum dibuat untuk order ini. Buat layout di menu Cutting Layout terlebih dahulu.','err');return}
-  window._cutExecSpkId=spkId;
-  window._cutExecJobId=cj.id;
-  const isExecuted=cj.status==='executed';
+function openSPKCutExec(spkId) {
+  const spk = D.spk.find(x => x.id === spkId);
+  if (!spk) return;
+  const cutJob = (D.cuttingJobs || []).find(x => x.orderId === spk.orderId && (x.status === 'pending' || x.status === 'executed'));
+  if (!cutJob) { toast('Cutting job tidak ditemukan', 'err'); return; }
 
-  // Summary header
-  const skuLayouts=cj.skuLayouts||null;
-  let totalPieces=0,totalSheets=0;
-  if(skuLayouts){
-    Object.values(skuLayouts).forEach(sk=>{sk.sheets.forEach(se=>{totalSheets++;totalPieces+=se.pieces.length;});});
-  } else {
-    totalPieces=(cj.layoutResult?.packed?.length||0);totalSheets=1;
+  window._execSpkId = spkId;
+  window._execCutJobId = cutJob.id;
+
+  const infoEl = document.getElementById('cut-exec-info');
+  if (infoEl) {
+    infoEl.innerHTML =
+      '<strong>' + spk.no + '</strong> · ' + spk.noOrder + ' · ' + spk.customer +
+      '<span style="float:right;color:' + (cutJob.status === 'executed' ? 'var(--green)' : 'var(--gold)') + '">' +
+      (cutJob.status === 'executed' ? '✓ Sudah Dikerjakan' : '⏳ Menunggu Eksekusi') + '</span>';
   }
-  document.getElementById('cut-exec-info').innerHTML=
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">'
-    +'<div><div class="sc-lbl">SPK</div><div class="tm" style="color:var(--orange)">'+spk.no+'</div></div>'
-    +'<div><div class="sc-lbl">Order</div><div class="tm">'+spk.noOrder+'</div></div>'
-    +'<div><div class="sc-lbl">Customer</div><div>'+spk.customer+'</div></div>'
-    +'<div><div class="sc-lbl">Total Sheets / Pieces</div><div class="tm">'+totalSheets+' sheet / '+totalPieces+' potong'+(isExecuted?' · <span style="color:var(--green)">✓ Sudah Dikerjakan</span>':'')+'</div></div>'
-    +'</div>';
 
-  const contentEl=document.getElementById('cut-exec-content');
-  contentEl.innerHTML='';
+  const contentEl = document.getElementById('cut-exec-content');
+  if (!contentEl) { openMo('mo-spk-cut-exec'); return; }
+  contentEl.innerHTML = '';
 
-  // Build per-SKU per-sheet sections
-  const allSheetEntries=[];// {skuKey,skuLabel,sheetIdx,sheetData,sheetStockObj}
-  if(skuLayouts){
-    Object.keys(skuLayouts).forEach(skuKey=>{
-      const sk=skuLayouts[skuKey];
-      const skuLabel=(sk.skuName||sk.skuCode)+(sk.thick?' · '+sk.thick:'')+(sk.type?' '+sk.type:'')+(sk.color?' '+sk.color:'');
-      sk.sheets.forEach(function(sheetData,si){
-        allSheetEntries.push({skuKey,skuLabel,sheetIdx:si,sheetData,totalSheets:sk.sheets.length});
+  const kerf = D.settings.kerf || 3;
+
+  if (cutJob.skuLayouts && Object.keys(cutJob.skuLayouts).length) {
+    // New multi-SKU format
+    let sectionIdx = 0;
+    Object.values(cutJob.skuLayouts).forEach(function(sku) {
+      const skuLabel = (sku.skuName || sku.skuCode || '') + ' — ' + (sku.thick || '') + ' ' + (sku.type || '') + (sku.color ? '/' + sku.color : '');
+      (sku.sheets || []).forEach(function(sheetData, si) {
+        const canvasId = 'cutExecCanvas-' + sectionIdx;
+        const sheetLabel = (sku.sheets.length > 1) ? ' (Sheet #' + (si + 1) + ')' : '';
+
+        const section = document.createElement('div');
+        section.className = 'cut-sku-diagram-card';
+        section.innerHTML =
+          '<div class="cut-sku-diagram-hd">' +
+          '<div><div class="cut-sku-diagram-title">✂️ ' + skuLabel + sheetLabel + '</div>' +
+          '<div class="cut-sku-diagram-sub">' + sheetData.sheetW + '×' + sheetData.sheetH + 'mm · ' + sheetData.pieces.length + ' pieces · utilisasi ' + sheetData.utilPct + '%</div></div>' +
+          '</div>' +
+          '<div class="cut-sku-diagram-body">' +
+          '<div class="cut-sku-diagram-canvas-wrap" style="max-height:300px;margin-bottom:10px">' +
+          '<canvas id="' + canvasId + '" width="700" height="400"></canvas>' +
+          '</div>' +
+          // Pieces list
+          '<div style="font-family:var(--disp);font-weight:700;font-size:11px;color:var(--green);margin-bottom:5px;letter-spacing:0.5px">HASIL POTONG → FINISHED GOODS</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">' +
+          sheetData.pieces.map(function(p) {
+            return '<span style="background:var(--bg1);border:1px solid var(--line);border-radius:3px;padding:2px 8px;font-family:var(--mono);font-size:10px">' + p.label + ' ' + p.w + '×' + p.h + 'mm</span>';
+          }).join('') +
+          '</div>' +
+          // Remnants
+          (sheetData.remnants && sheetData.remnants.length
+            ? '<div style="font-family:var(--disp);font-weight:700;font-size:11px;color:var(--orange);margin-bottom:5px;letter-spacing:0.5px">SISA POTONGAN</div>' +
+              sheetData.remnants.map(function(r, ri) {
+                const radioName = 'exec_remn_' + sectionIdx + '_' + ri;
+                return '<div class="cut-sku-remnant-row" style="margin-bottom:4px">' +
+                  '<span style="color:var(--gold);font-weight:700;flex:1">' + r.w + '×' + r.h + 'mm</span>' +
+                  '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--green)"><input type="radio" name="' + radioName + '" value="return" ' + (r.decision !== 'waste' ? 'checked' : '') + '> Return</label>' +
+                  '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--red)"><input type="radio" name="' + radioName + '" value="waste" ' + (r.decision === 'waste' ? 'checked' : '') + '> Waste</label>' +
+                  '<input type="hidden" class="exec-remn-meta" data-sku-key="' + sku.skuKey + '" data-sku-code="' + sku.skuCode + '" data-sku-name="' + sku.skuName + '" data-sheet-id="' + sheetData.sheetId + '" data-w="' + r.w + '" data-h="' + r.h + '" data-radio-name="' + radioName + '">' +
+                  '</div>';
+              }).join('')
+            : ''
+          ) +
+          '</div>';
+
+        contentEl.appendChild(section);
+
+        // Draw canvas after appending to DOM
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+          const fakeSheet = { w: sheetData.sheetW, h: sheetData.sheetH, skuName: sheetData.stockName || sku.skuName };
+          const fakeResult = { packed: sheetData.pieces, unpacked: [] };
+          drawCutCanvasOnElement(canvas, fakeSheet, fakeResult, kerf);
+        }
+
+        sectionIdx++;
       });
     });
   } else {
-    // Legacy format: single sheet
-    const skuLabel=cj.stockName||'';
-    const fakeSk={skuCode:cj.stockName||'',skuName:cj.stockName||'',thick:cj.sheetThick,type:cj.sheetType,color:cj.sheetColor,
-      sheets:[{sheetId:cj.stockId,stockName:cj.stockName,sheetW:cj.sheetW,sheetH:cj.sheetH,sheetThick:cj.sheetThick,sheetType:cj.sheetType,sheetColor:cj.sheetColor,
-        pieces:cj.pieces||[],layoutResult:cj.layoutResult,remnants:getRemnants(cj.sheetW,cj.sheetH,cj.layoutResult,cj.kerf,D.settings.threshold||100),
-        remnantDecisions:cj.remnantDecisions||[],kerf:cj.kerf,utilPct:'—'}]};
-    allSheetEntries.push({skuKey:'legacy',skuLabel,sheetIdx:0,sheetData:fakeSk.sheets[0],totalSheets:1});
+    // Legacy flat fallback
+    const canvasId = 'cutExecCanvas-0';
+    const section = document.createElement('div');
+    section.innerHTML =
+      '<div style="font-family:var(--mono);font-size:10px;color:var(--tx3);margin-bottom:8px">Legacy layout (single sheet)</div>' +
+      '<div class="cut-sku-diagram-canvas-wrap" style="max-height:300px;margin-bottom:10px"><canvas id="' + canvasId + '" width="700" height="400"></canvas></div>';
+    contentEl.appendChild(section);
+    const canvas = document.getElementById(canvasId);
+    if (canvas && cutJob.sheetW && cutJob.sheetH) {
+      const fakeSheet = { w: cutJob.sheetW, h: cutJob.sheetH };
+      const fakeResult = { packed: cutJob.pieces || [], unpacked: [] };
+      drawCutCanvasOnElement(canvas, fakeSheet, fakeResult, kerf);
+    }
   }
 
-  // Store for confirmSPKCutExec
-  window._cutExecSheetEntries=allSheetEntries;
+  // Populate location select
+  const locSel = document.getElementById('cut-exec-location');
+  if (locSel) {
+    locSel.innerHTML = '<option value="">— Tanpa lokasi —</option>' +
+      (D.locations || []).filter(function(l) { return l.status === 'active'; }).map(function(l) {
+        return '<option value="' + l.id + '">' + l.code + (l.name ? ' — ' + l.name : '') + '</option>';
+      }).join('');
+  }
 
-  allSheetEntries.forEach(function(entry,ei){
-    const sd=entry.sheetData;
-    const sh={w:sd.sheetW,h:sd.sheetH,thick:sd.sheetThick,type:sd.sheetType,color:sd.sheetColor};
-    const kerf=sd.kerf||D.settings.kerf||3;
-
-    const section=document.createElement('div');
-    section.style.cssText='background:var(--bg2);border:1px solid var(--line);border-radius:var(--rad);overflow:hidden';
-
-    // Section header
-    const hd=document.createElement('div');
-    hd.style.cssText='padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--line)';
-    hd.innerHTML='<span style="font-family:var(--disp);font-weight:700;font-size:12px;color:var(--teal)">DIAGRAM PEMOTONGAN'
-      +(entry.totalSheets>1?' — '+entry.skuLabel+' Sheet #'+(entry.sheetIdx+1):' — '+entry.skuLabel)+'</span>'
-      +' <span style="font-family:var(--mono);font-size:9px;color:var(--tx3)">'+sd.sheetW+'×'+sd.sheetH+'mm'+(sd.sheetThick?' · '+sd.sheetThick:'')+(sd.sheetType?' '+sd.sheetType:'')+(sd.sheetColor?' '+sd.sheetColor:'')+'</span>';
-    section.appendChild(hd);
-
-    const bd=document.createElement('div');
-    bd.style.cssText='padding:12px;display:flex;flex-direction:column;gap:10px';
-
-    // Canvas
-    if(sd.layoutResult){
-      const cw=document.createElement('div');
-      cw.style.cssText='background:var(--bg0);border:1px solid var(--line2);border-radius:5px;overflow:auto;max-height:300px;display:flex;align-items:flex-start;justify-content:center;padding:8px';
-      const cv=document.createElement('canvas');
-      cv.id='cutExecCanvas-'+ei;
-      cw.appendChild(cv);
-      bd.appendChild(cw);
-      setTimeout(function(){drawCutCanvasOnElement(cv,sh,sd.layoutResult,kerf);},50);
-    }
-
-    // Pieces
-    bd.innerHTML+='<div style="font-family:var(--disp);font-weight:700;font-size:11px;color:var(--green);letter-spacing:1px">HASIL POTONG → FINISHED GOODS</div>'
-      +'<div style="display:flex;flex-direction:column;gap:5px" id="exec-pieces-'+ei+'">'
-      +(sd.pieces||[]).map(function(p,pi){
-        return '<div style="display:grid;grid-template-columns:2fr 1fr 80px;gap:8px;align-items:center;background:var(--bg1);border:1px solid var(--green-d);border-radius:5px;padding:7px 10px">'
-          +'<div><div style="font-family:var(--mono);font-size:11px;color:var(--green)">Piece '+(pi+1)+': '+(p.label||p.w+'×'+p.h)+'</div>'
-          +'<div style="font-size:10px;color:var(--tx3)">'+p.w+' × '+p.h+' mm · '+(sd.sheetThick||'')+' '+(sd.sheetType||'')+' '+(sd.sheetColor||'')+'</div></div>'
-          +'<div style="font-family:var(--mono);font-size:10px;color:var(--tx2)">→ Finished Goods</div>'
-          +(isExecuted?'<span style="color:var(--green);font-family:var(--mono);font-size:10px">✓ Done</span>'
-            :'<input type="number" class="exec-piece-qty" data-entry="'+ei+'" data-idx="'+pi+'" value="1" min="1" style="font-size:12px;padding:4px 6px">')
-          +'</div>';
-      }).join('')+'</div>';
-
-    // Remnants
-    const rems=sd.remnantDecisions&&sd.remnantDecisions.length?sd.remnantDecisions:(sd.remnants||[]);
-    if(rems.length){
-      bd.innerHTML+='<div style="font-family:var(--disp);font-weight:700;font-size:11px;color:var(--orange);letter-spacing:1px">SISA POTONGAN</div>'
-        +'<div style="display:flex;flex-direction:column;gap:5px" id="exec-rems-'+ei+'">'
-        +rems.map(function(rem,ri){
-          const act=rem.action||'return';
-          return '<div style="display:grid;grid-template-columns:2fr 80px auto;gap:8px;align-items:center;background:var(--bg1);border:1px solid var(--green-d);border-radius:5px;padding:7px 10px">'
-            +'<div><div style="font-family:var(--mono);font-size:11px;color:var(--green)">'+rem.w+' × '+rem.h+' mm ('+rem.label+')</div></div>'
-            +(isExecuted
-              ?'<span style="font-family:var(--mono);font-size:9px;color:var(--tx2)">Qty: '+(rem.qty||1)+'</span><span class="badge '+(act==='return'?'b-done':'b-rev')+'">'+(act==='return'?'DIKEMBALIKAN':'WASTE')+'</span>'
-              :'<input type="number" class="exec-rem-qty" data-entry="'+ei+'" data-idx="'+ri+'" value="'+(rem.qty||1)+'" min="0" style="font-size:12px;padding:4px 6px">'
-              +'<select class="exec-rem-action" data-entry="'+ei+'" data-idx="'+ri+'" style="font-size:11px;padding:4px 6px">'
-              +'<option value="return" '+(act==='return'?'selected':'')+'>♻️ Kembalikan ke Inventory</option>'
-              +'<option value="waste" '+(act==='waste'?'selected':'')+'>🗑️ Buang (Waste)</option>'
-              +'</select>')
-            +'</div>';
-        }).join('')+'</div>';
-    }
-
-    section.appendChild(bd);
-    contentEl.appendChild(section);
-  });
-
-  // Location selector
-  const locSel=document.getElementById('cut-exec-location');
-  locSel.innerHTML='<option value="">— Tanpa lokasi —</option>'+(D.locations||[]).filter(function(l){return l.status==='active';}).map(function(l){return'<option value="'+l.id+'">'+l.code+(l.name?' — '+l.name:'')+'</option>';}).join('');
   // Hide/show confirm button
-  const confirmBtn=document.querySelector('[onclick="confirmSPKCutExec()"]');
-  if(confirmBtn)confirmBtn.style.display=isExecuted?'none':'';
+  const confirmBtn = document.querySelector('[onclick="confirmSPKCutExec()"]');
+  if (confirmBtn) confirmBtn.style.display = cutJob.status === 'executed' ? 'none' : '';
+
   openMo('mo-spk-cut-exec');
 }
 
-function confirmSPKCutExec(){
-  const spk=D.spk.find(x=>x.id===window._cutExecSpkId);
-  const cj=(D.cuttingJobs||[]).find(x=>x.id===window._cutExecJobId);
-  if(!spk||!cj){toast('Data tidak ditemukan','err');return}
-  const locId=document.getElementById('cut-exec-location').value;
-  const notes=document.getElementById('cut-exec-notes').value;
-  const allSheetEntries=window._cutExecSheetEntries||[];
-  let totalPiecesAdded=0;
+function confirmSPKCutExec() {
+  const spkId = window._execSpkId;
+  const cutJobId = window._execCutJobId;
+  const spk = D.spk.find(x => x.id === spkId);
+  const cutJob = (D.cuttingJobs || []).find(x => x.id === cutJobId);
+  if (!spk || !cutJob) { toast('Data tidak ditemukan', 'err'); return; }
 
-  allSheetEntries.forEach(function(entry,ei){
-    const sd=entry.sheetData;
-    const sh=D.stock.find(x=>x.id===sd.sheetId);
+  const locId = (document.getElementById('cut-exec-location') || {}).value || '';
+  const notes = (document.getElementById('cut-exec-notes') || {}).value || '';
 
-    // 1. Deduct raw stock (1 sheet per sheet entry)
-    if(sh){
-      sh.qty=Math.max(0,sh.qty-1);
-      const ssEntry=(D.storageStock||[]).find(x=>x.stockId===sd.sheetId&&x.qty>0);
-      if(ssEntry)ssEntry.qty=Math.max(0,ssEntry.qty-1);
-    }
-
-    // 2. Add finished goods for each piece
-    const o=D.orders.find(x=>x.id===cj.orderId);
-    const piecesQtyEls=[...document.querySelectorAll('.exec-piece-qty[data-entry="'+ei+'"]')];
-    (sd.pieces||[]).forEach(function(p,pi){
-      const qty=Math.max(1,+piecesQtyEls[pi]?.value||1);
-      const matchItem=o?.items.find(it=>Math.abs((it.w||0)-p.w)<5&&Math.abs((it.h||0)-p.h)<5)||o?.items[0];
-      D.finishedGoods.push({
-        id:uid(),
-        spkId:spk.id,noSpk:spk.no,
-        orderId:cj.orderId,noOrder:cj.noOrder,customer:cj.customerName||cj.customer,
-        skuId:matchItem?.skuId||null,
-        skuCode:matchItem?.skuCode||sd.sheetThick||'—',
-        skuName:matchItem?.skuName||p.label||p.w+'×'+p.h,
-        w:p.w,h:p.h,
-        thick:sd.sheetThick,type:sd.sheetType,color:sd.sheetColor,
-        qty,locationId:locId||null,
-        notes,status:'ready',
-        created:new Date().toISOString()
-      });
-      totalPiecesAdded+=qty;
-    });
-
-    // 3. Handle remnants
-    const remActionEls=[...document.querySelectorAll('.exec-rem-action[data-entry="'+ei+'"]')];
-    const remQtyEls=[...document.querySelectorAll('.exec-rem-qty[data-entry="'+ei+'"]')];
-    const rems=sd.remnantDecisions&&sd.remnantDecisions.length?sd.remnantDecisions:(sd.remnants||[]);
-    rems.forEach(function(rem,ri){
-      const action=remActionEls[ri]?.value||rem.action||'waste';
-      const qty=Math.max(1,+remQtyEls[ri]?.value||1);
-      if(action==='return'&&sh){
-        const remStockId=uid();
-        const remStock={
-          id:remStockId,skuId:sh.skuId||null,
-          skuCode:sh.skuCode||'—',
-          skuName:(sh.skuName||'Kaca')+' (Sisa '+rem.w+'×'+rem.h+'mm)',
-          w:rem.w,h:rem.h,
-          thick:sh.thick,type:sh.type,color:sh.color,brand:sh.brand,
-          qty,cost:sh.cost||0,
-          source:'cutting-remnant:'+spk.no,added:new Date().toISOString()
-        };
-        D.stock.push(remStock);
-        if(locId){D.storageStock.push({id:uid(),stockId:remStockId,skuCode:remStock.skuCode,skuName:remStock.skuName,locationId:locId,qty,inboundRef:'cutting-remnant',date:new Date().toISOString()});}
-        toast('♻️ Sisa '+rem.w+'×'+rem.h+'mm dikembalikan ke inventory','info');
-      }
-    });
+  // Collect remnant decisions from exec modal
+  const execRemnantDecisions = {};
+  document.querySelectorAll('.exec-remn-meta').forEach(function(inp) {
+    const radioName = inp.dataset.radioName;
+    const checked = document.querySelector('input[name="' + radioName + '"]:checked');
+    const decision = checked ? checked.value : 'return';
+    const key = inp.dataset.skuKey + '|' + inp.dataset.sheetId + '|' + inp.dataset.w + '|' + inp.dataset.h;
+    execRemnantDecisions[key] = {
+      decision: decision,
+      skuCode: inp.dataset.skuCode,
+      skuName: inp.dataset.skuName,
+      sheetId: inp.dataset.sheetId,
+      w: +inp.dataset.w,
+      h: +inp.dataset.h
+    };
   });
 
-  // 4. Mark cutting job executed
-  cj.status='executed';cj.executedDate=new Date().toISOString();cj.executedBySpk=spk.no;
+  let fgAdded = 0, stockDeducted = 0, remnantsReturned = 0;
 
-  // 5. Advance SPK status
-  const div=D.divisions.find(d=>d.id===spk.divId);
-  if(div){
-    const curIdx=div.statuses.indexOf(spk.currentStatus);
-    const nextStatus=div.statuses[curIdx+1];
-    if(nextStatus){
-      spk.currentStatus=nextStatus;
-      spk.statusHistory.push({status:nextStatus,date:new Date().toISOString(),notes:'Pemotongan selesai — '+totalPiecesAdded+' pieces → Finished Goods'+(notes?'. '+notes:'')});
+  if (cutJob.skuLayouts && Object.keys(cutJob.skuLayouts).length) {
+    // New multi-SKU format
+    Object.values(cutJob.skuLayouts).forEach(function(sku) {
+      (sku.sheets || []).forEach(function(sheetData) {
+        // Deduct 1 sheet from D.stock
+        const stockItem = (D.stock || []).find(x => x.id === sheetData.sheetId);
+        if (stockItem && stockItem.qty > 0) {
+          stockItem.qty -= 1;
+          stockDeducted++;
+        }
+
+        // Push pieces to D.finishedGoods
+        (sheetData.pieces || []).forEach(function(p) {
+          if (!D.finishedGoods) D.finishedGoods = [];
+          D.finishedGoods.push({
+            id: uid(),
+            orderId: cutJob.orderId,
+            noOrder: cutJob.noOrder,
+            customerName: cutJob.customerName,
+            skuId: sku.skuId || '',
+            skuCode: sku.skuCode || '',
+            skuName: sku.skuName || '',
+            w: p.w, h: p.h,
+            thick: sku.thick || sheetData.thick || '',
+            type: sku.type || sheetData.type || '',
+            color: sku.color || sheetData.color || '',
+            qty: 1,
+            locationId: locId || '',
+            fromSpkId: spkId,
+            fromCutJobId: cutJob.id,
+            notes: notes,
+            date: new Date().toISOString()
+          });
+          fgAdded++;
+        });
+
+        // Handle remnants
+        (sheetData.remnants || []).forEach(function(r) {
+          const key = sku.skuKey + '|' + sheetData.sheetId + '|' + r.w + '|' + r.h;
+          const decisionEntry = execRemnantDecisions[key];
+          const decision = decisionEntry ? decisionEntry.decision : r.decision || 'return';
+          if (decision === 'return') {
+            // Return as new stock entry
+            const origSheet = (D.stock || []).find(x => x.id === sheetData.sheetId);
+            if (!D.stock) D.stock = [];
+            D.stock.push({
+              id: uid(),
+              skuId: sku.skuId || '',
+              skuCode: sku.skuCode || '',
+              skuName: (sku.skuName || '') + ' (Sisa ' + r.w + '×' + r.h + 'mm)',
+              w: r.w, h: r.h,
+              thick: sku.thick || (origSheet && origSheet.thick) || '',
+              type: sku.type || (origSheet && origSheet.type) || '',
+              color: sku.color || (origSheet && origSheet.color) || '',
+              brand: origSheet ? origSheet.brand || '' : '',
+              qty: 1,
+              source: 'remnant',
+              fromCutJobId: cutJob.id,
+              date: new Date().toISOString()
+            });
+            remnantsReturned++;
+          }
+          // else: waste — do nothing
+        });
+      });
+    });
+  } else {
+    // Legacy flat fallback
+    const stockItem = (D.stock || []).find(x => x.id === cutJob.stockId);
+    if (stockItem && stockItem.qty > 0) { stockItem.qty -= 1; stockDeducted++; }
+    (cutJob.pieces || []).forEach(function(p) {
+      if (!D.finishedGoods) D.finishedGoods = [];
+      D.finishedGoods.push({
+        id: uid(),
+        orderId: cutJob.orderId,
+        noOrder: cutJob.noOrder,
+        customerName: cutJob.customerName,
+        skuCode: p.label || '',
+        skuName: p.label || '',
+        w: p.w, h: p.h, qty: 1,
+        locationId: locId,
+        fromSpkId: spkId,
+        fromCutJobId: cutJob.id,
+        notes: notes,
+        date: new Date().toISOString()
+      });
+      fgAdded++;
+    });
+  }
+
+  // Mark job executed
+  cutJob.status = 'executed';
+  cutJob.executedDate = new Date().toISOString();
+  cutJob.executedBy = notes || 'operator';
+
+  // Advance SPK to next status
+  const div = D.divisions.find(x => x.id === spk.divId);
+  if (div && div.statuses) {
+    const idx = div.statuses.indexOf(spk.currentStatus);
+    if (idx >= 0 && idx < div.statuses.length - 1) {
+      const nextStatus = div.statuses[idx + 1];
+      spk.currentStatus = nextStatus;
+      spk.statusHistory = spk.statusHistory || [];
+      spk.statusHistory.push({ status: nextStatus, date: new Date().toISOString(), notes: 'Auto-advance setelah eksekusi potong' });
     }
   }
 
-  saveAll();closeMo('mo-spk-cut-exec');renderAll();
-  toast('✅ Pemotongan '+spk.no+' selesai — '+totalPiecesAdded+' pieces masuk Finished Goods','ok');
+  saveAll();
+  closeMo('mo-spk-cut-exec');
+  renderSPK();
+  renderFinishedGoods();
+  renderInventory();
+  updateBadges();
+  toast('✅ Pemotongan dikonfirmasi — ' + fgAdded + ' FG · ' + stockDeducted + ' sheet dikurangi' + (remnantsReturned ? ' · ' + remnantsReturned + ' sisa dikembalikan' : ''), 'ok');
 }
 
 // ═══════════════════════════════════════════════════════
