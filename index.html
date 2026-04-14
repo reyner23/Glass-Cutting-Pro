@@ -2501,8 +2501,9 @@ function renderSPK(){
     else html+=`<div class="spk-grid">${spks.map(spk=>{
       const statusIdx=div.statuses.indexOf(spk.currentStatus);
       const isPotong=div.code==='POTONG'||div.name.toLowerCase().includes('potong');
-      const cutJob=(D.cuttingJobs||[]).find(function(x){return x.orderId===spk.orderId&&(x.status==='pending'||x.status==='executed');});
-      const cutJobPending=(D.cuttingJobs||[]).find(function(x){return x.orderId===spk.orderId&&x.status==='pending';});
+      const _orderCutJobs=(D.cuttingJobs||[]).filter(function(x){return x.orderId===spk.orderId&&(x.status==='pending'||x.status==='executed');});
+      const cutJobPending=_orderCutJobs.find(function(x){return x.status==='pending';});
+      const cutJob=cutJobPending||(_orderCutJobs.length?_orderCutJobs[_orderCutJobs.length-1]:null);
       // Potong-specific layout info panel
       const layoutPanel=isPotong?(
         cutJob
@@ -4251,7 +4252,8 @@ function viewCutJob(ordId){
 function openSPKCutExec(spkId) {
   const spk = D.spk.find(x => x.id === spkId);
   if (!spk) return;
-  const cutJob = (D.cuttingJobs || []).find(x => x.orderId === spk.orderId && (x.status === 'pending' || x.status === 'executed'));
+  const _spkCutJobs = (D.cuttingJobs || []).filter(x => x.orderId === spk.orderId && (x.status === 'pending' || x.status === 'executed'));
+  const cutJob = _spkCutJobs.find(x => x.status === 'pending') || (_spkCutJobs.length ? _spkCutJobs[_spkCutJobs.length - 1] : null);
   if (!cutJob) { toast('Cutting job tidak ditemukan', 'err'); return; }
 
   window._execSpkId = spkId;
