@@ -4884,17 +4884,16 @@ function loadFBConfigToForm() {
 }
 
 function getFBConfig() {
-  try { return JSON.parse(localStorage.getItem(FB_CONFIG_KEY)) || null; } catch { return null; }
+  try { return JSON.parse(localStorage.getItem(FB_CONFIG_KEY)) || null; } catch(e) { console.warn('[Firebase] getFBConfig parse error:', e); return null; }
 }
 function saveFBConfig(cfg) {
   localStorage.setItem(FB_CONFIG_KEY, JSON.stringify(cfg));
 }
 function getFBOpts() {
+  const defaults = { realtime: true, 'offline-persist': true, 'auto-push': true, 'merge-local': false };
   try {
-    return JSON.parse(localStorage.getItem(FB_OPTS_KEY)) || {
-      realtime: true, 'offline-persist': true, 'auto-push': true, 'merge-local': false
-    };
-  } catch { return {}; }
+    return JSON.parse(localStorage.getItem(FB_OPTS_KEY)) || defaults;
+  } catch(e) { console.warn('[Firebase] getFBOpts parse error:', e); return defaults; }
 }
 function saveFBOpts(opts) {
   localStorage.setItem(FB_OPTS_KEY, JSON.stringify(opts));
@@ -5087,7 +5086,7 @@ function startRealtimeListeners() {
 
   FB_COLLECTIONS.forEach(function(col) {
     const unsub = _fbDb.collection(col).onSnapshot(function(snap) {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata.hasPendingWrites) return; // skip snapshots triggered by our own local writes to avoid loops
       D[col] = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
       saveAll();
       clearTimeout(window._fbRenderTimer);
@@ -5219,10 +5218,11 @@ function loadFirebaseSDK() {
   if (cfg && cfg.projectId) {
     const pd = document.getElementById('fb-project-display');
     if (pd) pd.textContent = cfg.projectId;
+    const AUTO_RECONNECT_DELAY_MS = 1200; // allow DOM + init() to settle before attempting Firebase connection
     setTimeout(function() {
       loadFBConfigToForm();
       connectFirebase();
-    }, 1200);
+    }, AUTO_RECONNECT_DELAY_MS);
   }
 })();
 </script>
