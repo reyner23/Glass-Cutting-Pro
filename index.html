@@ -3684,7 +3684,8 @@ function genLayout(){
 
   // Check if we're adding an extra sheet for this SKU or starting fresh
   const existingEntry=window._skuLayouts[activeKey];
-  const isOverflowSheet=existingEntry&&existingEntry.sheets.length>0&&!existingEntry.allFit;
+  // isOverflowSheet: entry exists but last sheet had unpacked pieces → user is adding a new sheet for overflow
+  const isOverflowSheet=existingEntry&&!existingEntry.allFit;
 
   const result=packShelf(W,H,pieces,kerf);
   const thr=D.settings.threshold||100;
@@ -3794,7 +3795,8 @@ function renderAllDiagrams(){
       const usedArea=result.packed.reduce((a,p)=>a+p.w*p.h,0);
       const util=sh.w&&sh.h?((usedArea/(sh.w*sh.h))*100).toFixed(1):'0';
       const hasUnpacked=result.unpacked.length>0;
-      const isActiveSkuAndLastSheet=skuKey===(_cutActiveSku||skuKey)&&i===entry.sheets.length-1;
+      // Show overflow button only on the active SKU's last sheet (when pieces didn't fit)
+      const isLastSheetForActiveSku=i===entry.sheets.length-1&&(skuKey===_cutActiveSku||_cutActiveSku===null);
 
       const card=document.createElement('div');
       card.className='cut-sku-diagram-card';
@@ -3838,7 +3840,7 @@ function renderAllDiagrams(){
       }
 
       // Warning + add sheet button if unpacked pieces remain
-      if(hasUnpacked&&isActiveSkuAndLastSheet){
+      if(hasUnpacked&&isLastSheetForActiveSku){
         const warnDiv=document.createElement('div');
         warnDiv.style.cssText='background:rgba(239,68,68,0.08);border:1px solid var(--red);border-radius:5px;padding:8px 12px;font-family:var(--mono);font-size:10px;color:var(--red);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap';
         warnDiv.innerHTML='<span>⚠️ '+result.unpacked.length+' pieces tidak muat di sheet ini</span>'
@@ -3849,7 +3851,7 @@ function renderAllDiagrams(){
       card.appendChild(body);
       container.appendChild(card);
 
-      // Draw canvas after DOM insertion
+      // Draw canvas after DOM insertion (brief delay needed for layout to complete)
       setTimeout(function(){drawCutCanvasOnElement(canvasEl,sh,result,se.kerf||D.settings.kerf||3);},30);
     });
   });
@@ -4136,18 +4138,20 @@ function saveCuttingJob(o, remnantDecisions){
     }
   });
 
+  // Extract first sheet data for legacy backward-compat fields
+  const _firstSheet=Object.values(skuLayouts)[0]?.sheets[0];
   const cj={
     id:jobId,
     orderId:o.id,noOrder:o.noOrder,customerName:o.customerName,
     skuLayouts,
     // Legacy fields for backward compat with old SPK exec code (first sheet of first SKU)
-    stockId:Object.values(skuLayouts)[0]?.sheets[0]?.sheetId||null,
-    stockName:Object.values(skuLayouts)[0]?.sheets[0]?.stockName||null,
-    sheetW:Object.values(skuLayouts)[0]?.sheets[0]?.sheetW||null,
-    sheetH:Object.values(skuLayouts)[0]?.sheets[0]?.sheetH||null,
-    sheetThick:Object.values(skuLayouts)[0]?.sheets[0]?.sheetThick||null,
-    sheetType:Object.values(skuLayouts)[0]?.sheets[0]?.sheetType||null,
-    sheetColor:Object.values(skuLayouts)[0]?.sheets[0]?.sheetColor||null,
+    stockId:_firstSheet?.sheetId||null,
+    stockName:_firstSheet?.stockName||null,
+    sheetW:_firstSheet?.sheetW||null,
+    sheetH:_firstSheet?.sheetH||null,
+    sheetThick:_firstSheet?.sheetThick||null,
+    sheetType:_firstSheet?.sheetType||null,
+    sheetColor:_firstSheet?.sheetColor||null,
     kerf,
     status:'pending',
     created:new Date().toISOString()
@@ -4364,7 +4368,7 @@ function confirmSPKCutExec(){
         const remStock={
           id:remStockId,skuId:sh.skuId||null,
           skuCode:sh.skuCode||'—',
-          skuName:(sh.skuName||'Kaca')+'(Sisa '+rem.w+'×'+rem.h+'mm)',
+          skuName:(sh.skuName||'Kaca')+' (Sisa '+rem.w+'×'+rem.h+'mm)',
           w:rem.w,h:rem.h,
           thick:sh.thick,type:sh.type,color:sh.color,brand:sh.brand,
           qty,cost:sh.cost||0,
