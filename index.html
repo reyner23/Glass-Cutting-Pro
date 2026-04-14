@@ -981,10 +981,112 @@ td{padding:9px 12px;color:var(--tx1);vertical-align:middle}
         </div>
       </div>
     </div>
-    <div class="card" style="grid-column:1/-1">
-      <div class="card-hd"><span class="ct" style="color:var(--orange)">🔥 Firebase Config</span></div>
+    <div class="card" style="grid-column:1/-1" id="firebase-config-card">
+      <div class="card-hd">
+        <span class="ct" style="color:var(--orange)">🔥 Firebase Config</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div id="fb-status-pill" style="display:flex;align-items:center;gap:6px;background:var(--bg1);border:1px solid var(--line);border-radius:20px;padding:4px 12px;font-family:var(--mono);font-size:10px;color:var(--tx2)">
+            <div id="fb-status-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
+            <span id="fb-status-txt">Tidak Terhubung</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="toggleFBConfigForm()">⚙️ Konfigurasi</button>
+        </div>
+      </div>
       <div class="card-bd">
-        <div style="background:var(--bg0);border:1px solid var(--line);border-radius:5px;padding:12px;font-family:var(--mono);font-size:10px;color:var(--tx3);line-height:1.8">Collections: <span style="color:var(--gold)">orders · quotations · spk · inbound · stockopname · sj · stock · customers · suppliers · skus · divisions · settings</span></div>
+        <!-- Status & Info -->
+        <div id="fb-info-panel" style="margin-bottom:12px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:10px" id="fb-stats-grid">
+            <div class="sc" style="padding:9px"><div class="sc-lbl">Status</div><div id="fb-conn-status" style="font-family:var(--mono);font-size:12px;color:var(--red)">Offline (Local)</div></div>
+            <div class="sc" style="padding:9px"><div class="sc-lbl">Project ID</div><div id="fb-project-display" style="font-family:var(--mono);font-size:11px;color:var(--tx2)">—</div></div>
+            <div class="sc teal" style="padding:9px"><div class="sc-lbl">Sync Mode</div><div id="fb-sync-mode" style="font-family:var(--mono);font-size:11px;color:var(--teal)">localStorage only</div></div>
+            <div class="sc green" style="padding:9px"><div class="sc-lbl">Last Sync</div><div id="fb-last-sync" style="font-family:var(--mono);font-size:11px;color:var(--tx2)">—</div></div>
+          </div>
+          <div style="background:var(--bg0);border:1px solid var(--line);border-radius:5px;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--tx3);line-height:1.8">
+            Collections: <span style="color:var(--gold)">orders · quotations · spk · inbound · stockopname · sj · stock · customers · suppliers · skus · divisions · settings · purchaseOrders · finishedGoods · cuttingJobs · locations · storageStock</span>
+          </div>
+        </div>
+
+        <!-- Config Form (hidden by default) -->
+        <div id="fb-config-form" style="display:none;border-top:1px solid var(--line);padding-top:14px">
+          <div style="background:rgba(251,146,60,0.08);border:1px solid var(--orange-d);border-radius:6px;padding:10px 13px;font-family:var(--mono);font-size:10px;color:var(--tx2);margin-bottom:14px">
+            ⚠️ Konfigurasi Firebase disimpan di <strong style="color:var(--gold)">localStorage</strong> perangkat ini. Pastikan Firestore sudah aktif dan rules sudah dikonfigurasi. Data akan di-sync <strong style="color:var(--gold)">realtime</strong> ke semua perangkat yang menggunakan config yang sama.
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div class="fg">
+              <label>API Key *</label>
+              <input type="password" id="fb-apiKey" placeholder="AIzaSy..." autocomplete="off">
+              <div style="font-family:var(--mono);font-size:9px;color:var(--tx3);margin-top:2px">Firebase Console → Project Settings → Web App</div>
+            </div>
+            <div class="fg">
+              <label>Auth Domain</label>
+              <input type="text" id="fb-authDomain" placeholder="your-project.firebaseapp.com">
+            </div>
+            <div class="fg">
+              <label>Project ID *</label>
+              <input type="text" id="fb-projectId" placeholder="your-project-id">
+            </div>
+            <div class="fg">
+              <label>Storage Bucket</label>
+              <input type="text" id="fb-storageBucket" placeholder="your-project.appspot.com">
+            </div>
+            <div class="fg">
+              <label>Messaging Sender ID</label>
+              <input type="text" id="fb-messagingSenderId" placeholder="123456789">
+            </div>
+            <div class="fg">
+              <label>App ID *</label>
+              <input type="text" id="fb-appId" placeholder="1:123:web:abc123">
+            </div>
+          </div>
+
+          <!-- Sync Options -->
+          <div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:14px;background:var(--bg1)">
+            <div style="font-family:var(--disp);font-weight:700;font-size:11px;color:var(--gold);letter-spacing:1px;margin-bottom:10px">OPSI SYNC</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+                <input type="checkbox" id="fb-realtime" checked> Realtime Listener (onSnapshot)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+                <input type="checkbox" id="fb-offline-persist" checked> Offline Persistence
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+                <input type="checkbox" id="fb-auto-push" checked> Auto Push saat Save
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+                <input type="checkbox" id="fb-merge-local"> Merge Local Data ke Firebase saat Connect
+              </label>
+            </div>
+          </div>
+
+          <!-- Firestore Rules helper -->
+          <div style="border:1px solid var(--line2);border-radius:6px;padding:10px 12px;margin-bottom:14px;background:var(--bg0)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div style="font-family:var(--mono);font-size:9px;color:var(--tx3);letter-spacing:1px">FIRESTORE RULES (Development)</div>
+              <button class="btn btn-ghost btn-sm" onclick="copyFirestoreRules()" style="font-size:9px;padding:2px 8px">📋 Copy</button>
+            </div>
+            <pre id="fb-rules-preview" style="font-family:var(--mono);font-size:10px;color:var(--tx2);line-height:1.6;overflow-x:auto;white-space:pre">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true; // ⚠️ Development only!
+    }
+  }
+}</pre>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-gold" onclick="connectFirebase()">🔥 Hubungkan Firebase</button>
+            <button class="btn btn-ghost" onclick="disconnectFirebase()">⏹ Putuskan</button>
+            <button class="btn btn-teal" onclick="pushAllToFirebase()" id="fb-push-btn" disabled>⬆️ Push Semua Data ke Firebase</button>
+            <button class="btn btn-blue" onclick="pullAllFromFirebase()" id="fb-pull-btn" disabled>⬇️ Pull Data dari Firebase</button>
+            <button class="btn btn-red btn-sm" onclick="clearFBConfig()">🗑 Hapus Config</button>
+          </div>
+
+          <!-- Connection log -->
+          <div id="fb-log" style="margin-top:12px;background:var(--bg0);border:1px solid var(--line);border-radius:5px;padding:10px;font-family:var(--mono);font-size:10px;color:var(--tx3);max-height:120px;overflow-y:auto;display:none"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -4549,12 +4651,10 @@ function saveAslocAssign() {
     if (!byStock[sid]) byStock[sid] = { total: 0, max: 0, code: r.dataset.skuCode };
     byStock[sid].total += qty;
   });
-  // Fill max from D.stock
   Object.keys(byStock).forEach(sid => {
     const st = D.stock.find(x => x.id === sid);
     byStock[sid].max = st ? st.qty : 0;
   });
-  // Check each SKU individually
   const overLimit = Object.values(byStock).filter(g => g.total > g.max);
   if (overLimit.length) {
     toast('Qty melebihi stok: ' + overLimit.map(g => g.code + ' (' + g.total + '>' + g.max + ')').join(', '), 'err');
@@ -4749,6 +4849,382 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll(sel).forEach(el => el.setAttribute('onclick', fn));
   });
 });
+// ═══════════════════════════════════════════════════════
+//  FIREBASE INTEGRATION
+// ═══════════════════════════════════════════════════════
+
+const FB_CONFIG_KEY = 'gcv2_firebase_config';
+const FB_OPTS_KEY   = 'gcv2_firebase_opts';
+const FB_COLLECTIONS = [
+  'orders','quotations','spk','inbound','stockopname','sj',
+  'stock','customers','suppliers','skus','divisions',
+  'purchaseOrders','finishedGoods','cuttingJobs',
+  'locations','storageStock'
+];
+
+let _fbApp = null, _fbDb = null, _fbListeners = [];
+let _fbConnected = false;
+
+function loadFBConfigToForm() {
+  const cfg = getFBConfig();
+  if (!cfg) return;
+  ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].forEach(k => {
+    const el = document.getElementById('fb-' + k);
+    if (el && cfg[k]) el.value = cfg[k];
+  });
+  const opts = getFBOpts();
+  ['realtime','offline-persist','auto-push','merge-local'].forEach(k => {
+    const el = document.getElementById('fb-' + k);
+    if (el && opts[k] !== undefined) el.checked = opts[k];
+  });
+  if (cfg.projectId) {
+    const pd = document.getElementById('fb-project-display');
+    if (pd) pd.textContent = cfg.projectId;
+  }
+}
+
+function getFBConfig() {
+  try { return JSON.parse(localStorage.getItem(FB_CONFIG_KEY)) || null; } catch { return null; }
+}
+function saveFBConfig(cfg) {
+  localStorage.setItem(FB_CONFIG_KEY, JSON.stringify(cfg));
+}
+function getFBOpts() {
+  try {
+    return JSON.parse(localStorage.getItem(FB_OPTS_KEY)) || {
+      realtime: true, 'offline-persist': true, 'auto-push': true, 'merge-local': false
+    };
+  } catch { return {}; }
+}
+function saveFBOpts(opts) {
+  localStorage.setItem(FB_OPTS_KEY, JSON.stringify(opts));
+}
+
+function toggleFBConfigForm() {
+  const form = document.getElementById('fb-config-form');
+  if (!form) return;
+  const isHidden = form.style.display === 'none';
+  form.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) loadFBConfigToForm();
+}
+
+function fbLog(msg, type) {
+  type = type || 'info';
+  const el = document.getElementById('fb-log');
+  if (!el) return;
+  el.style.display = 'block';
+  const colors = { info: 'var(--tx2)', ok: 'var(--green)', err: 'var(--red)', warn: 'var(--orange)' };
+  const time = new Date().toLocaleTimeString('id-ID');
+  el.innerHTML += '<div style="color:' + (colors[type]||'var(--tx2)') + '">[' + time + '] ' + msg + '</div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function setFBStatus(connected, label) {
+  _fbConnected = connected;
+  const dot = document.getElementById('fb-status-dot');
+  const txt = document.getElementById('fb-status-txt');
+  const connTxt = document.getElementById('connTxt');
+  const headerDot = document.getElementById('dot');
+  const statusEl = document.getElementById('fb-conn-status');
+  const syncModeEl = document.getElementById('fb-sync-mode');
+
+  if (dot) { dot.style.background = connected ? 'var(--green)' : 'var(--red)'; dot.style.boxShadow = connected ? '0 0 6px var(--green)' : 'none'; }
+  if (txt) txt.textContent = connected ? 'Terhubung' : (label || 'Tidak Terhubung');
+  if (connTxt) connTxt.textContent = connected ? 'FIREBASE' : 'LOCAL';
+  if (headerDot) { if (connected) headerDot.classList.add('on'); else headerDot.classList.remove('on'); }
+  if (statusEl) { statusEl.textContent = connected ? '🟢 Online (Firebase)' : '🔴 Offline (Local)'; statusEl.style.color = connected ? 'var(--green)' : 'var(--red)'; }
+  if (syncModeEl) { syncModeEl.textContent = connected ? (getFBOpts().realtime ? 'Realtime' : 'Manual') : 'localStorage only'; syncModeEl.style.color = connected ? 'var(--teal)' : 'var(--tx2)'; }
+
+  const pushBtn = document.getElementById('fb-push-btn');
+  const pullBtn = document.getElementById('fb-pull-btn');
+  if (pushBtn) pushBtn.disabled = !connected;
+  if (pullBtn) pullBtn.disabled = !connected;
+
+  window._firebaseReady = connected;
+}
+
+async function connectFirebase() {
+  const cfg = readFBConfigFromForm();
+  if (!cfg) return;
+
+  fbLog('Menghubungkan ke Firebase...', 'info');
+  setFBStatus(false, 'Menghubungkan...');
+
+  try {
+    await loadFirebaseSDK();
+
+    if (_fbApp) { try { await _fbApp.delete(); } catch(e) {} }
+
+    _fbApp = firebase.initializeApp(cfg, 'gcpro_' + Date.now());
+    _fbDb  = firebase.firestore(_fbApp);
+
+    const opts = readFBOptsFromForm();
+    if (opts['offline-persist']) {
+      try {
+        await _fbDb.enablePersistence({ synchronizeTabs: true });
+        fbLog('Offline persistence aktif', 'ok');
+      } catch(e) {
+        if (e.code === 'failed-precondition') fbLog('Offline persistence: multi-tab mode', 'warn');
+        else if (e.code === 'unimplemented') fbLog('Offline persistence tidak didukung browser ini', 'warn');
+      }
+    }
+
+    await _fbDb.collection('_ping').doc('test').set({ ts: Date.now() });
+    await _fbDb.collection('_ping').doc('test').delete();
+
+    saveFBConfig(cfg);
+    saveFBOpts(opts);
+    const pd = document.getElementById('fb-project-display');
+    if (pd) pd.textContent = cfg.projectId;
+
+    setFBStatus(true);
+    fbLog('✅ Berhasil terhubung ke project: ' + cfg.projectId, 'ok');
+    toast('🔥 Firebase terhubung: ' + cfg.projectId, 'ok');
+
+    if (opts['merge-local']) {
+      fbLog('Memulai merge local data ke Firebase...', 'info');
+      await pushAllToFirebase(true);
+    }
+
+    if (opts.realtime) startRealtimeListeners();
+
+    updateLastSync();
+
+  } catch (e) {
+    setFBStatus(false, 'Gagal');
+    fbLog('❌ Error: ' + (e.message || e), 'err');
+    toast('Firebase error: ' + (e.message || 'Cek config & console'), 'err');
+    console.error('[Firebase]', e);
+  }
+}
+
+function disconnectFirebase() {
+  stopRealtimeListeners();
+  if (_fbApp) { try { _fbApp.delete(); } catch(e) {} _fbApp = null; _fbDb = null; }
+  setFBStatus(false, 'Terputus');
+  fbLog('Koneksi Firebase diputus', 'warn');
+  toast('Firebase diputuskan', 'warn');
+}
+
+async function pushAllToFirebase(silent) {
+  silent = silent || false;
+  if (!_fbDb) { if (!silent) toast('Firebase belum terhubung', 'err'); return; }
+  if (!silent) fbLog('Memulai push semua data ke Firebase...', 'info');
+
+  let total = 0;
+
+  for (let i = 0; i < FB_COLLECTIONS.length; i++) {
+    const col = FB_COLLECTIONS[i];
+    const items = D[col] || [];
+    if (!items.length) continue;
+    try {
+      const batch = _fbDb.batch();
+      items.forEach(function(item) {
+        if (!item.id) return;
+        const ref = _fbDb.collection(col).doc(item.id);
+        batch.set(ref, sanitizeForFirestore(item), { merge: true });
+      });
+      await batch.commit();
+      total += items.length;
+      if (!silent) fbLog('  ✓ ' + col + ': ' + items.length + ' docs', 'ok');
+    } catch(e) {
+      fbLog('  ✗ ' + col + ': ' + e.message, 'err');
+    }
+  }
+
+  try {
+    await _fbDb.collection('settings').doc('main').set(sanitizeForFirestore(D.settings), { merge: true });
+    if (!silent) fbLog('  ✓ settings: 1 doc', 'ok');
+  } catch(e) {
+    fbLog('  ✗ settings: ' + e.message, 'err');
+  }
+
+  updateLastSync();
+  if (!silent) {
+    fbLog('✅ Push selesai — ' + total + ' dokumen', 'ok');
+    toast('⬆️ ' + total + ' dokumen berhasil di-push ke Firebase', 'ok');
+  }
+}
+
+async function pullAllFromFirebase() {
+  if (!_fbDb) { toast('Firebase belum terhubung', 'err'); return; }
+  fbLog('Memulai pull data dari Firebase...', 'info');
+
+  let total = 0;
+  for (let i = 0; i < FB_COLLECTIONS.length; i++) {
+    const col = FB_COLLECTIONS[i];
+    try {
+      const snap = await _fbDb.collection(col).get();
+      if (!snap.empty) {
+        D[col] = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
+        total += snap.docs.length;
+        fbLog('  ✓ ' + col + ': ' + snap.docs.length + ' docs', 'ok');
+      } else {
+        fbLog('  — ' + col + ': kosong', 'info');
+      }
+    } catch(e) {
+      fbLog('  ✗ ' + col + ': ' + e.message, 'err');
+    }
+  }
+
+  try {
+    const snap = await _fbDb.collection('settings').doc('main').get();
+    if (snap.exists) { D.settings = Object.assign({}, D.settings, snap.data()); fbLog('  ✓ settings: 1 doc', 'ok'); }
+  } catch(e) {
+    fbLog('  ✗ settings: ' + e.message, 'err');
+  }
+
+  saveAll();
+  renderAll();
+  updateLastSync();
+  fbLog('✅ Pull selesai — ' + total + ' dokumen', 'ok');
+  toast('⬇️ ' + total + ' dokumen berhasil di-pull dari Firebase', 'ok');
+}
+
+function startRealtimeListeners() {
+  stopRealtimeListeners();
+  fbLog('Memulai realtime listeners...', 'info');
+
+  FB_COLLECTIONS.forEach(function(col) {
+    const unsub = _fbDb.collection(col).onSnapshot(function(snap) {
+      if (snap.metadata.hasPendingWrites) return;
+      D[col] = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
+      saveAll();
+      clearTimeout(window._fbRenderTimer);
+      window._fbRenderTimer = setTimeout(function() {
+        renderAll();
+        updateLastSync();
+      }, 300);
+    }, function(err) {
+      fbLog('Listener error (' + col + '): ' + err.message, 'err');
+    });
+    _fbListeners.push(unsub);
+  });
+
+  fbLog('✅ ' + FB_COLLECTIONS.length + ' realtime listeners aktif', 'ok');
+}
+
+function stopRealtimeListeners() {
+  _fbListeners.forEach(function(unsub) { try { unsub(); } catch(e) {} });
+  _fbListeners = [];
+}
+
+// Patch saveAll to auto-push to Firebase
+const _origSaveAll = saveAll;
+function saveAll() {
+  _origSaveAll();
+  if (_fbConnected && _fbDb && getFBOpts()['auto-push']) {
+    debounceFirestoreWrite();
+  }
+}
+
+let _firestoreWriteTimer = null;
+function debounceFirestoreWrite() {
+  clearTimeout(_firestoreWriteTimer);
+  _firestoreWriteTimer = setTimeout(function() {
+    pushAllToFirebase(true).catch(function(e) { console.warn('[Firebase auto-push]', e); });
+  }, 1500);
+}
+
+function readFBConfigFromForm() {
+  const apiKey    = (document.getElementById('fb-apiKey') || {}).value || '';
+  const projectId = (document.getElementById('fb-projectId') || {}).value || '';
+  const appId     = (document.getElementById('fb-appId') || {}).value || '';
+  if (!apiKey.trim() || !projectId.trim() || !appId.trim()) {
+    toast('API Key, Project ID, dan App ID wajib diisi', 'err');
+    return null;
+  }
+  return {
+    apiKey: apiKey.trim(),
+    authDomain:        ((document.getElementById('fb-authDomain') || {}).value || '').trim() || projectId.trim() + '.firebaseapp.com',
+    projectId:         projectId.trim(),
+    storageBucket:     ((document.getElementById('fb-storageBucket') || {}).value || '').trim() || projectId.trim() + '.appspot.com',
+    messagingSenderId: ((document.getElementById('fb-messagingSenderId') || {}).value || '').trim(),
+    appId:             appId.trim(),
+  };
+}
+
+function readFBOptsFromForm() {
+  return {
+    realtime:          !!(document.getElementById('fb-realtime') || {}).checked,
+    'offline-persist': !!(document.getElementById('fb-offline-persist') || {}).checked,
+    'auto-push':       !!(document.getElementById('fb-auto-push') || {}).checked,
+    'merge-local':     !!(document.getElementById('fb-merge-local') || {}).checked,
+  };
+}
+
+function sanitizeForFirestore(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function updateLastSync() {
+  const el = document.getElementById('fb-last-sync');
+  if (el) el.textContent = new Date().toLocaleTimeString('id-ID');
+}
+
+function copyFirestoreRules() {
+  const el = document.getElementById('fb-rules-preview');
+  const rules = el ? el.textContent : '';
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(rules).then(function() { toast('Rules disalin ke clipboard', 'ok'); }).catch(function() { toast('Gagal copy — salin manual', 'err'); });
+  } else {
+    toast('Clipboard tidak tersedia di browser ini', 'warn');
+  }
+}
+
+function clearFBConfig() {
+  disconnectFirebase();
+  localStorage.removeItem(FB_CONFIG_KEY);
+  localStorage.removeItem(FB_OPTS_KEY);
+  ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].forEach(function(k) {
+    const el = document.getElementById('fb-' + k); if (el) el.value = '';
+  });
+  const pd = document.getElementById('fb-project-display');
+  if (pd) pd.textContent = '—';
+  fbLog('Config Firebase dihapus', 'warn');
+  toast('Firebase config dihapus', 'warn');
+}
+
+function loadFirebaseSDK() {
+  if (window.firebase && window.firebase.firestore) return Promise.resolve();
+  return new Promise(function(resolve, reject) {
+    fbLog('Memuat Firebase SDK...', 'info');
+    const sdks = [
+      'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+      'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
+    ];
+    let loaded = 0;
+    sdks.forEach(function(src) {
+      if (document.querySelector('script[src="' + src + '"]')) {
+        loaded++;
+        if (loaded === sdks.length) resolve();
+        return;
+      }
+      const sc = document.createElement('script');
+      sc.src = src;
+      sc.onload = function() {
+        loaded++;
+        fbLog('SDK dimuat: ' + src.split('/').pop(), 'info');
+        if (loaded === sdks.length) setTimeout(resolve, 200);
+      };
+      sc.onerror = function() { reject(new Error('Gagal load SDK: ' + src)); };
+      document.head.appendChild(sc);
+    });
+  });
+}
+
+// Auto-reconnect on page load if config exists
+(function() {
+  const cfg = getFBConfig();
+  if (cfg && cfg.projectId) {
+    const pd = document.getElementById('fb-project-display');
+    if (pd) pd.textContent = cfg.projectId;
+    setTimeout(function() {
+      loadFBConfigToForm();
+      connectFirebase();
+    }, 1200);
+  }
+})();
 </script>
 </body>
 </html>
